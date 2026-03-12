@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Viyann Skates</title>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: radial-gradient(ellipse at top, #020810 0%, #010508 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Nunito', sans-serif;
+    overflow: hidden;
+  }
+  .title-label {
+    font-family: 'Bangers', cursive;
+    color: #00cfff;
+    font-size: 18px;
+    letter-spacing: 5px;
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px rgba(0,180,255,0.9), 0 0 40px rgba(0,100,200,0.5);
+  }
+  canvas {
+    display: block;
+    cursor: pointer;
+    border-radius: 8px;
+    box-shadow:
+      0 0 0 2px rgba(0,180,255,0.4),
+      0 0 40px rgba(0,150,255,0.5),
+      0 0 80px rgba(0,80,180,0.3);
+  }
+  .hint {
+    color: rgba(0,180,255,0.4);
+    font-size: 12px;
+    letter-spacing: 3px;
+    margin-top: 12px;
+    font-family: 'Nunito', sans-serif;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="title-label">⚡ VIYANN SKATES ⚡</div>
+<canvas id="c" width="420" height="620"></canvas>
+<div class="hint">Space / Click to Jump</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 420, H = 620;
+
+// Snowflakes
+const SNOWFLAKES = Array.from({length: 55}, () => ({
+  x: Math.random()*W, y: Math.random()*H,
+  r: Math.random()*2+0.5,
+  speed: Math.random()*0.7+0.2,
+  drift: (Math.random()-0.5)*0.4,
+  alpha: Math.random()*0.5+0.15
+}));
+
+// Crowd silhouettes in stands
+const CROWD = Array.from({length: 40}, (_, i) => ({
+  x: (i * 11) % W,
+  y: H * 0.52 + Math.sin(i * 2.3) * 8,
+  h: 12 + Math.random() * 10,
+  w: 7 + Math.random() * 5
+}));
+
+let state = {};
+function resetState() {
+  state = {
+    phase: 'idle',
+    cy: H - 140,
+    cvy: 0,
+    frame: 0,
+    obstacles: [],
+    obstTimer: 0,
+    score: 0,
+    best: 0,
+    deathTimer: 0,
+    sparks: [],
+    iceTrail: [],
+    crowdWave: 0,
+  };
+}
+resetState();
+
+const GRAVITY = 0.40;
+const JUMP = -9.2;
+const OBS_W = 56;
+const OBS_GAP = 162;
+const OBS_SPD = 2.8;
+const OBS_EVERY = 102;
+const GROUND_Y = H - 58;
+const VIYANN_X = 90;
+const VIYANN_H = 38;
+
+function doJump() {
+  if (state.phase === 'idle') {
+    state.phase = 'playing';
+    state.cvy = JUMP;
+    spawnSparks(VIYANN_X, state.cy, '#00cfff');
+  } else if (state.phase === 'playing') {
+    state.cvy = JUMP;
+    spawnSparks(VIYANN_X, state.cy, '#00cfff');
+  } else if (state.phase === 'dead' && state.deathTimer > 70) {
+    const best = state.best;
+    resetState();
+    state.best = best;
+  }
+}
+
+function spawnSparks(x, y, color) {
+  for (let i = 0; i < 10; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 3 + 0.5;
+    state.sparks.push({
+      x: x + (Math.random()-0.5)*16,
+      y: y + VIYANN_H/2,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 1.5,
+      life: 1.0,
+      r: Math.random()*3+1,
+      color
+    });
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code==='Space'||e.code==='ArrowUp') { e.preventDefault(); doJump(); }
+});
+canvas.addEventListener('click', doJump);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); doJump(); }, {passive:false});
+
+function update() {
+  state.frame++;
+
+  for (const s of SNOWFLAKES) {
+    s.y += s.speed; s.x += s.drift;
+    if (s.y > H) { s.y = -5; s.x = Math.random()*W; }
+    if (s.x > W) s.x = 0;
+    if (s.x < 0) s.x = W;
+  }
+
+  if (state.phase === 'playing') {
+    state.cvy += GRAVITY;
+    state.cy += state.cvy;
+    state.crowdWave = Math.sin(state.frame * 0.05) * 3;
+
+    // Ice trail
+    if (state.frame % 2 === 0) {
+      state.iceTrail.push({
+        x: VIYANN_X - 8, y: state.cy + VIYANN_H/2 - 2,
+        life: 1.0, w: 22 + Math.random()*8
+      });
+    }
+    for (const t of state.iceTrail) t.life -= 0.04;
+    state.iceTrail = state.iceTrail.filter(t => t.life > 0);
+
+    // Sparks
+    for (const sp of state.sparks) {
+      sp.x += sp.vx; sp.y += sp.vy; sp.vy += 0.12; sp.life -= 0.05;
+    }
+    state.sparks = state.sparks.filter(s => s.life > 0);
+
+    // Obstacles
+    state.obstTimer++;
+    if (state.obstTimer >= OBS_EVERY) {
+      state.obstTimer = 0;
+      const topH = 75 + Math.random() * (H - OBS_GAP - 190);
+      state.obstacles.push({x: W+20, topH, scored: false});
+    }
+    for (const o of state.obstacles) o.x -= OBS_SPD;
+    state.obstacles = state.obstacles.filter(o => o.x > -OBS_W - 20);
+
+    // Score
+    for (const o of state.obstacles) {
+      if (!o.scored && o.x + OBS_W < VIYANN_X) {
+        o.scored = true;
+        state.score++;
+        if (state.score > state.best) state.best = state.score;
+        spawnSparks(VIYANN_X + 30, H/2, '#ffdd00');
+      }
+    }
+
+    // Collision
+    const hr = 9, vr = 14;
+    if (state.cy - vr < 8 || state.cy + vr > GROUND_Y) {
+      state.phase = 'dead'; state.deathTimer = 0;
+      spawnSparks(VIYANN_X, state.cy, '#ff4444');
+    }
+    for (const o of state.obstacles) {
+      const inX = VIYANN_X + hr > o.x + 5 && VIYANN_X - hr < o.x + OBS_W - 5;
+      if (inX && (state.cy - vr < o.topH || state.cy + vr > o.topH + OBS_GAP)) {
+        state.phase = 'dead'; state.deathTimer = 0;
+        spawnSparks(VIYANN_X, state.cy, '#ff4444');
+      }
+    }
+  }
+
+  if (state.phase === 'dead') {
+    state.deathTimer++;
+    state.cy = Math.min(state.cy + 5, GROUND_Y - 12);
+    for (const sp of state.sparks) {
+      sp.x += sp.vx; sp.y += sp.vy; sp.vy += 0.12; sp.life -= 0.04;
+    }
+    state.sparks = state.sparks.filter(s => s.life > 0);
+  }
+}
+
+// Draw icicle wall obstacle
+function drawIcicleWall(x, height, fromTop) {
+  const grad = ctx.createLinearGradient(x, 0, x + OBS_W, 0);
+  grad.addColorStop(0, '#1a6090');
+  grad.addColorStop(0.3, '#2a90c0');
+  grad.addColorStop(0.6, '#50b8e0');
+  grad.addColorStop(1, '#1a5070');
+  ctx.fillStyle = grad;
+  ctx.shadowColor = '#00aaff';
+  ctx.shadowBlur = 14;
+
+  if (fromTop) {
+    ctx.fillRect(x, 0, OBS_W, height);
+    // Cap
+    ctx.fillStyle = '#60c8f0';
+    ctx.fillRect(x - 6, height - 18, OBS_W + 12, 18);
+    // Icicle spikes
+    const spikes = 5;
+    const sw = (OBS_W + 12) / spikes;
+    for (let i = 0; i < spikes; i++) {
+      const sh = 20 + Math.sin(i * 1.8) * 10;
+      ctx.fillStyle = `rgba(80,184,224,${0.7 + i%2*0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(x - 6 + i*sw, height);
+      ctx.lineTo(x - 6 + i*sw + sw/2, height + sh);
+      ctx.lineTo(x - 6 + (i+1)*sw, height);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Shine
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(180,240,255,0.35)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + 8 + i*16, 0);
+      ctx.lineTo(x + 8 + i*16, height);
+      ctx.stroke();
+    }
+  } else {
+    const botY = GROUND_Y;
+    ctx.fillRect(x, botY - height, OBS_W, height);
+    ctx.fillStyle = '#60c8f0';
+    ctx.fillRect(x - 6, botY - height, OBS_W + 12, 18);
+    const spikes = 5;
+    const sw = (OBS_W + 12) / spikes;
+    for (let i = 0; i < spikes; i++) {
+      const sh = 20 + Math.sin(i * 2.1 + 0.5) * 10;
+      ctx.fillStyle = `rgba(80,184,224,${0.7 + i%2*0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(x - 6 + i*sw, botY - height);
+      ctx.lineTo(x - 6 + i*sw + sw/2, botY - height - sh);
+      ctx.lineTo(x - 6 + (i+1)*sw, botY - height);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(180,240,255,0.35)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + 8 + i*16, botY - height);
+      ctx.lineTo(x + 8 + i*16, botY);
+      ctx.stroke();
+    }
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawViyann(x, y, vy, phase) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  const lean = phase === 'dead' ? 50 : Math.max(-18, Math.min(28, vy * 2.2));
+  ctx.rotate(lean * Math.PI / 180);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,150,220,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(0, VIYANN_H/2 + 4, 16, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Skate blades
+  ctx.strokeStyle = '#aaddff';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = '#00aaff';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(-12, VIYANN_H/2 + 3);
+  ctx.lineTo(10, VIYANN_H/2 + 3);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-8, VIYANN_H/2 + 3);
+  ctx.lineTo(14, VIYANN_H/2 + 3);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Boots - dark hockey skates
+  ctx.fillStyle = '#1a2a3a';
+  ctx.beginPath(); ctx.roundRect(-12, VIYANN_H/2 - 10, 15, 13, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(1, VIYANN_H/2 - 10, 15, 13, 3); ctx.fill();
+  // Boot highlight
+  ctx.fillStyle = '#2a4a6a';
+  ctx.beginPath(); ctx.roundRect(-11, VIYANN_H/2 - 9, 6, 4, 2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(2, VIYANN_H/2 - 9, 6, 4, 2); ctx.fill();
+
+  // Pants - dark navy
+  ctx.fillStyle = '#0a1828';
+  ctx.beginPath(); ctx.roundRect(-11, VIYANN_H/2 - 22, 10, 14, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(2, VIYANN_H/2 - 22, 10, 14, 3); ctx.fill();
+  // Stripe on pants
+  ctx.strokeStyle = '#00aaff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-5, VIYANN_H/2 - 22); ctx.lineTo(-5, VIYANN_H/2 - 9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(8, VIYANN_H/2 - 22); ctx.lineTo(8, VIYANN_H/2 - 9); ctx.stroke();
+
+  // Hockey jersey - bold red with number
+  const jerseyGrad = ctx.createLinearGradient(-13, -VIYANN_H/2+14, 13, VIYANN_H/2-10);
+  jerseyGrad.addColorStop(0, '#cc2222');
+  jerseyGrad.addColorStop(0.4, '#ee3333');
+  jerseyGrad.addColorStop(1, '#991111');
+  ctx.fillStyle = jerseyGrad;
+  ctx.shadowColor = '#ff2222';
+  ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.roundRect(-13, -VIYANN_H/2+14, 26, 24, 4); ctx.fill();
+  ctx.shadowBlur = 0;
+  // Jersey stripes
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-13, -VIYANN_H/2+22); ctx.lineTo(13, -VIYANN_H/2+22); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-13, -VIYANN_H/2+26); ctx.lineTo(13, -VIYANN_H/2+26); ctx.stroke();
+  // Jersey number "7"
+  ctx.font = 'bold 10px Nunito';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.fillText('7', 0, -VIYANN_H/2 + 34);
+
+  // Arms - dynamic skating pose
+  const armSwing = Math.sin(state.frame * 0.18) * 12;
+  ctx.strokeStyle = '#dd2222';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  // Back arm pumping
+  ctx.beginPath();
+  ctx.moveTo(-10, -VIYANN_H/2 + 18);
+  ctx.quadraticCurveTo(-22, -VIYANN_H/2 + 20 + armSwing, -24, -VIYANN_H/2 + 10 + armSwing);
+  ctx.stroke();
+  // Front arm forward
+  ctx.beginPath();
+  ctx.moveTo(10, -VIYANN_H/2 + 18);
+  ctx.quadraticCurveTo(22, -VIYANN_H/2 + 12 - armSwing, 22, -VIYANN_H/2 + 4 - armSwing);
+  ctx.stroke();
+  // Gloves
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(-24, -VIYANN_H/2 + 10 + armSwing, 4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(22, -VIYANN_H/2 + 4 - armSwing, 4, 0, Math.PI*2); ctx.fill();
+
+  // Neck
+  ctx.fillStyle = '#e8c898';
+  ctx.beginPath(); ctx.roundRect(-4, -VIYANN_H/2 + 10, 8, 6, 2); ctx.fill();
+
+  // Head
+  ctx.fillStyle = '#e8c898';
+  ctx.shadowColor = '#c09060';
+  ctx.shadowBlur = 5;
+  ctx.beginPath();
+  ctx.arc(0, -VIYANN_H/2 + 4, 12, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Hockey helmet - red
+  ctx.fillStyle = '#cc1111';
+  ctx.shadowColor = '#ff2222';
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(0, -VIYANN_H/2 + 2, 12, Math.PI, Math.PI*2);
+  ctx.fill();
+  ctx.fillRect(-12, -VIYANN_H/2 + 2, 24, 5);
+  ctx.shadowBlur = 0;
+  // Helmet visor
+  ctx.fillStyle = 'rgba(0,200,255,0.3)';
+  ctx.beginPath();
+  ctx.arc(0, -VIYANN_H/2 + 4, 12, -0.3, Math.PI+0.3);
+  ctx.lineTo(-12, -VIYANN_H/2 + 7);
+  ctx.closePath();
+  ctx.fill();
+  // Helmet stripe
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, -VIYANN_H/2 + 2, 12, Math.PI+0.3, Math.PI*2-0.3);
+  ctx.stroke();
+
+  // Face under visor
+  // Eyes
+  ctx.fillStyle = '#2a1a00';
+  ctx.beginPath(); ctx.arc(-4, -VIYANN_H/2 + 6, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -VIYANN_H/2 + 6, 2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-3, -VIYANN_H/2 + 5, 0.8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(5, -VIYANN_H/2 + 5, 0.8, 0, Math.PI*2); ctx.fill();
+
+  // Determined mouth
+  ctx.strokeStyle = '#b07040';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-3, -VIYANN_H/2 + 11);
+  ctx.lineTo(3, -VIYANN_H/2 + 11);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function draw() {
+  const f = state.frame;
+
+  // === Background: indoor ice arena ===
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#060a12');
+  bgGrad.addColorStop(0.4, '#08111e');
+  bgGrad.addColorStop(0.65, '#0a1828');
+  bgGrad.addColorStop(1, '#060e18');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Arena ceiling lights
+  for (let i = 0; i < 5; i++) {
+    const lx = 40 + i * 88;
+    const flicker = 0.7 + Math.sin(f * 0.3 + i * 1.5) * 0.05;
+    const lg = ctx.createRadialGradient(lx, 0, 0, lx, 0, 120);
+    lg.addColorStop(0, `rgba(180,220,255,${0.18 * flicker})`);
+    lg.addColorStop(0.5, `rgba(100,170,255,${0.06 * flicker})`);
+    lg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(lx - 120, 0, 240, 220);
+    // Light fixture
+    ctx.fillStyle = `rgba(220,240,255,${0.6 * flicker})`;
+    ctx.beginPath(); ctx.arc(lx, 4, 4, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = `rgba(180,210,255,${0.3})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, 8); ctx.stroke();
+  }
+
+  // Crowd stands - upper area
+  ctx.fillStyle = '#0a1520';
+  ctx.fillRect(0, H * 0.36, W, H * 0.16);
+  // Crowd silhouettes
+  for (const c of CROWD) {
+    const wave = Math.sin(f * 0.04 + c.x * 0.1) * state.crowdWave;
+    const hue = (c.x * 3) % 360;
+    ctx.fillStyle = `hsla(${hue}, 60%, 40%, 0.6)`;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y + wave - c.h, c.w/2, Math.PI, 0);
+    ctx.rect(c.x - c.w/2, c.y + wave - c.h, c.w, c.h);
+    ctx.fill();
+  }
+  // Stands railing
+  ctx.strokeStyle = 'rgba(0,150,220,0.25)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.52);
+  ctx.lineTo(W, H * 0.52);
+  ctx.stroke();
+
+  // Rink boards (side walls visible)
+  const boardGrad = ctx.createLinearGradient(0, H*0.52, 0, GROUND_Y);
+  boardGrad.addColorStop(0, '#0d2035');
+  boardGrad.addColorStop(1, '#081828');
+  ctx.fillStyle = boardGrad;
+  ctx.fillRect(0, H*0.52, W, GROUND_Y - H*0.52);
+  // Board advertisement banners
+  const banners = ['ICE KING', 'TURBO', 'FROSTBITE', 'CHILL CO', 'ARCTIC'];
+  ctx.font = 'bold 11px Nunito';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < banners.length; i++) {
+    const bx = i * 90 - ((f * OBS_SPD * 0.3) % (W + 90));
+    const bw = 80, bh = 22;
+    const by = H * 0.54;
+    const colors = ['#cc0000','#0044cc','#008800','#cc6600','#6600cc'];
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.shadowBlur = 0;
+    ctx.fillRect(bx - bw/2, by, bw, bh);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(banners[i], bx, by + 15);
+    // Repeat for seamless scroll
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(bx - bw/2 + W + 90, by, bw, bh);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(banners[i], bx + W + 90, by + 15);
+  }
+
+  // Ice surface
+  const iceGrad = ctx.createLinearGradient(0, GROUND_Y - 30, 0, H);
+  iceGrad.addColorStop(0, '#1a4868');
+  iceGrad.addColorStop(0.3, '#1e5878');
+  iceGrad.addColorStop(1, '#0c2030');
+  ctx.fillStyle = iceGrad;
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+  // Ice surface gloss
+  ctx.fillStyle = 'rgba(100,200,255,0.1)';
+  ctx.fillRect(0, GROUND_Y, W, 4);
+
+  // Center ice logo (scrolling circle)
+  const logoX = W/2 - ((f * OBS_SPD * 0.5) % (W * 2)) + W * 0.5;
+  ctx.strokeStyle = 'rgba(0,120,200,0.15)';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(logoX, GROUND_Y + 20, 40, 0, Math.PI*2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,120,200,0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(logoX - 44, GROUND_Y + 20); ctx.lineTo(logoX + 44, GROUND_Y + 20); ctx.stroke();
+
+  // Lane marks scrolling
+  ctx.strokeStyle = 'rgba(100,180,255,0.07)';
+  ctx.lineWidth = 1;
+  const scroll = (f * OBS_SPD * 0.5) % 70;
+  for (let x = -scroll; x < W + 10; x += 70) {
+    ctx.beginPath();
+    ctx.moveTo(x, GROUND_Y + 5);
+    ctx.lineTo(x + 35, GROUND_Y + 30);
+    ctx.stroke();
+  }
+
+  // Snowflakes
+  for (const s of SNOWFLAKES) {
+    ctx.globalAlpha = s.alpha * 0.6;
+    ctx.fillStyle = '#ddeeff';
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Ice trail
+  for (const t of state.iceTrail) {
+    ctx.globalAlpha = t.life * 0.55;
+    ctx.strokeStyle = '#80d8ff';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = '#00aaff';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.moveTo(t.x, t.y);
+    ctx.lineTo(t.x - t.w, t.y + 3);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  // Obstacles
+  for (const o of state.obstacles) {
+    const botH = GROUND_Y - o.topH - OBS_GAP;
+    drawIcicleWall(o.x, o.topH, true);
+    drawIcicleWall(o.x, botH, false);
+  }
+
+  // Sparks
+  for (const sp of state.sparks) {
+    ctx.globalAlpha = sp.life;
+    ctx.fillStyle = sp.color;
+    ctx.shadowColor = sp.color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  // Viyann
+  drawViyann(VIYANN_X, state.cy, state.cvy, state.phase);
+
+  // Score display
+  ctx.font = "bold 40px 'Bangers', cursive";
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillText(state.score, W/2+2, 55);
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#00aaff';
+  ctx.shadowBlur = 18;
+  ctx.fillText(state.score, W/2, 53);
+  ctx.shadowBlur = 0;
+
+  // === IDLE SCREEN ===
+  if (state.phase === 'idle') {
+    ctx.fillStyle = 'rgba(4,8,18,0.65)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+
+    // Glow behind title
+    const titleGlow = ctx.createRadialGradient(W/2, 230, 0, W/2, 230, 160);
+    titleGlow.addColorStop(0, 'rgba(0,150,255,0.15)');
+    titleGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = titleGlow;
+    ctx.fillRect(W/2 - 160, 130, 320, 200);
+
+    ctx.font = "bold 72px 'Bangers', cursive";
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#0088ff';
+    ctx.shadowBlur = 30;
+    ctx.fillText('VIYANN', W/2, 215);
+
+    ctx.font = "bold 48px 'Bangers', cursive";
+    ctx.fillStyle = '#00ccff';
+    ctx.shadowColor = '#0055ff';
+    ctx.shadowBlur = 20;
+    ctx.fillText('SKATES', W/2, 265);
+    ctx.shadowBlur = 0;
+
+    // Subtitle
+    ctx.font = "900 13px 'Nunito', sans-serif";
+    ctx.fillStyle = 'rgba(150,220,255,0.6)';
+    ctx.fillText('ICE ARENA CHAMPION', W/2, 295);
+
+    const pulse = Math.sin(f * 0.08) * 0.25 + 0.75;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#fff';
+    ctx.font = "700 16px 'Nunito', sans-serif";
+    ctx.fillText('⚡ TAP OR PRESS SPACE TO SKATE ⚡', W/2, 345);
+    ctx.globalAlpha = 1;
+
+    if (state.best > 0) {
+      ctx.fillStyle = '#ffdd00';
+      ctx.shadowColor = '#ffaa00';
+      ctx.shadowBlur = 10;
+      ctx.font = "700 17px 'Nunito', sans-serif";
+      ctx.fillText('🏆 BEST: ' + state.best, W/2, 382);
+      ctx.shadowBlur = 0;
+    }
+
+    // Jersey number hint
+    ctx.fillStyle = 'rgba(100,180,255,0.3)';
+    ctx.font = "700 13px 'Nunito', sans-serif";
+    ctx.fillText('#7 — VIYANN THE ICEMAN', W/2, 415);
+  }
+
+  // === DEAD SCREEN ===
+  if (state.phase === 'dead' && state.deathTimer > 35) {
+    ctx.fillStyle = 'rgba(4,8,18,0.75)';
+    ctx.beginPath();
+    ctx.roundRect(45, 185, 330, 240, 14);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,150,255,0.4)';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#0088ff';
+    ctx.shadowBlur = 15;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.textAlign = 'center';
+    ctx.font = "bold 34px 'Bangers', cursive";
+    ctx.fillStyle = '#ff4444';
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 18;
+    ctx.fillText('VIYANN WIPED OUT!', W/2, 232);
+    ctx.shadowBlur = 0;
+
+    ctx.font = "bold 24px 'Nunito', sans-serif";
+    ctx.fillStyle = '#e8f4ff';
+    ctx.fillText('Score: ' + state.score, W/2, 274);
+    ctx.fillStyle = '#ffdd00';
+    ctx.shadowColor = '#ffaa00';
+    ctx.shadowBlur = 8;
+    ctx.fillText('🏆 Best: ' + state.best, W/2, 308);
+    ctx.shadowBlur = 0;
+
+    if (state.deathTimer > 70) {
+      const p2 = Math.sin(f * 0.1) * 0.25 + 0.75;
+      ctx.globalAlpha = p2;
+      ctx.fillStyle = '#00ccff';
+      ctx.font = "700 15px 'Nunito', sans-serif";
+      ctx.fillText('⚡ TAP / SPACE TO TRY AGAIN ⚡', W/2, 382);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
