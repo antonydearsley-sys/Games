@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loui Skates</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: radial-gradient(ellipse at top, #0a0000 0%, #050000 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Nunito', sans-serif;
+    overflow: hidden;
+  }
+  .title-label {
+    font-family: 'Bebas Neue', cursive;
+    color: #ff2200;
+    font-size: 20px;
+    letter-spacing: 8px;
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px rgba(255,30,0,0.9), 0 0 40px rgba(200,0,0,0.5);
+  }
+  canvas {
+    display: block;
+    cursor: pointer;
+    border-radius: 8px;
+    box-shadow:
+      0 0 0 2px rgba(220,30,0,0.4),
+      0 0 40px rgba(200,20,0,0.5),
+      0 0 80px rgba(150,0,0,0.3);
+  }
+  .hint {
+    color: rgba(220,50,0,0.4);
+    font-size: 12px;
+    letter-spacing: 3px;
+    margin-top: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="title-label">⚡ LOUI SKATES ⚡</div>
+<canvas id="c" width="420" height="620"></canvas>
+<div class="hint">Space / Click to Jump</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 420, H = 620;
+
+const SNOWFLAKES = Array.from({length: 55}, () => ({
+  x: Math.random()*W, y: Math.random()*H,
+  r: Math.random()*2+0.4,
+  speed: Math.random()*0.6+0.2,
+  drift: (Math.random()-0.5)*0.35,
+  alpha: Math.random()*0.4+0.1
+}));
+
+const CROWD = Array.from({length: 48}, (_, i) => ({
+  x: (i*9)%W,
+  y: H*0.50+Math.sin(i*2.3)*7,
+  h: 12+Math.random()*10,
+  w: 7+Math.random()*5
+}));
+
+let state = {};
+function resetState() {
+  state = {
+    phase: 'idle',
+    cy: H-140, cvy: 0,
+    frame: 0,
+    obstacles: [], obstTimer: 0,
+    score: 0, best: 0,
+    deathTimer: 0,
+    sparks: [], iceTrail: [],
+    crowdWave: 0,
+    swooshes: []
+  };
+}
+resetState();
+
+const GRAVITY = 0.40;
+const JUMP = -9.2;
+const OBS_W = 56;
+const OBS_GAP = 160;
+const OBS_SPD = 2.9;
+const OBS_EVERY = 102;
+const GROUND_Y = H - 58;
+const LOUI_X = 90;
+const LOUI_H = 40;
+
+function doJump() {
+  if (state.phase === 'idle') {
+    state.phase = 'playing'; state.cvy = JUMP;
+    spawnSparks(LOUI_X, state.cy, '#ff2200');
+    spawnSwoosh();
+  } else if (state.phase === 'playing') {
+    state.cvy = JUMP;
+    spawnSparks(LOUI_X, state.cy, '#ff2200');
+    spawnSwoosh();
+  } else if (state.phase === 'dead' && state.deathTimer > 70) {
+    const best = state.best; resetState(); state.best = best;
+  }
+}
+
+function spawnSparks(x, y, color) {
+  for (let i = 0; i < 12; i++) {
+    const angle = Math.random()*Math.PI*2;
+    const spd = Math.random()*4+0.5;
+    state.sparks.push({
+      x: x+(Math.random()-0.5)*16, y: y+LOUI_H/2,
+      vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd-2,
+      life: 1.0, r: Math.random()*3+1, color
+    });
+  }
+}
+
+function spawnSwoosh() {
+  state.swooshes.push({
+    x: LOUI_X-10, y: state.cy,
+    life: 1.0, scale: 1+Math.random()*0.5
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code==='Space'||e.code==='ArrowUp') { e.preventDefault(); doJump(); }
+});
+canvas.addEventListener('click', doJump);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); doJump(); }, {passive:false});
+
+function update() {
+  state.frame++;
+  for (const s of SNOWFLAKES) {
+    s.y += s.speed; s.x += s.drift;
+    if (s.y > H) { s.y = -5; s.x = Math.random()*W; }
+    if (s.x > W) s.x = 0; if (s.x < 0) s.x = W;
+  }
+
+  if (state.phase === 'playing') {
+    state.cvy += GRAVITY;
+    state.cy += state.cvy;
+    state.crowdWave = Math.sin(state.frame*0.05)*4;
+
+    if (state.frame%2===0) {
+      state.iceTrail.push({
+        x: LOUI_X-8, y: state.cy+LOUI_H/2-2,
+        life: 1.0, w: 24+Math.random()*8
+      });
+    }
+    for (const t of state.iceTrail) t.life -= 0.04;
+    state.iceTrail = state.iceTrail.filter(t => t.life > 0);
+
+    for (const sp of state.sparks) {
+      sp.x += sp.vx; sp.y += sp.vy; sp.vy += 0.12; sp.life -= 0.05;
+    }
+    state.sparks = state.sparks.filter(s => s.life > 0);
+
+    for (const sw of state.swooshes) { sw.life -= 0.06; }
+    state.swooshes = state.swooshes.filter(s => s.life > 0);
+
+    state.obstTimer++;
+    if (state.obstTimer >= OBS_EVERY) {
+      state.obstTimer = 0;
+      const topH = 75+Math.random()*(H-OBS_GAP-190);
+      state.obstacles.push({x: W+20, topH, scored: false});
+    }
+    for (const o of state.obstacles) o.x -= OBS_SPD;
+    state.obstacles = state.obstacles.filter(o => o.x > -OBS_W-20);
+
+    for (const o of state.obstacles) {
+      if (!o.scored && o.x+OBS_W < LOUI_X) {
+        o.scored = true; state.score++;
+        if (state.score > state.best) state.best = state.score;
+        spawnSparks(LOUI_X+30, H/2, '#ffffff');
+      }
+    }
+
+    const hr = 9, vr = 14;
+    if (state.cy-vr < 8 || state.cy+vr > GROUND_Y) {
+      state.phase = 'dead'; state.deathTimer = 0;
+      spawnSparks(LOUI_X, state.cy, '#ff2200');
+    }
+    for (const o of state.obstacles) {
+      const inX = LOUI_X+hr > o.x+5 && LOUI_X-hr < o.x+OBS_W-5;
+      if (inX && (state.cy-vr < o.topH || state.cy+vr > o.topH+OBS_GAP)) {
+        state.phase = 'dead'; state.deathTimer = 0;
+        spawnSparks(LOUI_X, state.cy, '#ff2200');
+      }
+    }
+  }
+
+  if (state.phase === 'dead') {
+    state.deathTimer++;
+    state.cy = Math.min(state.cy+5, GROUND_Y-12);
+    for (const sp of state.sparks) {
+      sp.x += sp.vx; sp.y += sp.vy; sp.vy += 0.12; sp.life -= 0.04;
+    }
+    state.sparks = state.sparks.filter(s => s.life > 0);
+  }
+}
+
+function drawWall(x, height, fromTop) {
+  // Black ice walls with red Nike-style stripe
+  const grad = ctx.createLinearGradient(x, 0, x+OBS_W, 0);
+  grad.addColorStop(0, '#111');
+  grad.addColorStop(0.35, '#222');
+  grad.addColorStop(0.65, '#333');
+  grad.addColorStop(1, '#0a0a0a');
+  ctx.fillStyle = grad;
+  ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 14;
+
+  if (fromTop) {
+    ctx.fillRect(x, 0, OBS_W, height);
+    // Red cap
+    ctx.fillStyle = '#cc1100';
+    ctx.fillRect(x-6, height-20, OBS_W+12, 20);
+    // Nike swoosh-style slash on cap
+    ctx.strokeStyle = '#ff3300'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x-2, height-14);
+    ctx.quadraticCurveTo(x+OBS_W/2, height-4, x+OBS_W+2, height-10);
+    ctx.stroke();
+    // Ice spikes
+    const spikes = 5, sw = (OBS_W+12)/spikes;
+    for (let i = 0; i < spikes; i++) {
+      const sh = 20+Math.sin(i*1.9)*9;
+      ctx.fillStyle = i%2===0 ? '#cc1100' : '#881100';
+      ctx.beginPath();
+      ctx.moveTo(x-6+i*sw, height);
+      ctx.lineTo(x-6+i*sw+sw/2, height+sh);
+      ctx.lineTo(x-6+(i+1)*sw, height);
+      ctx.closePath(); ctx.fill();
+    }
+    // Red vertical stripe on wall
+    ctx.fillStyle = 'rgba(200,20,0,0.25)';
+    ctx.fillRect(x+OBS_W/2-3, 0, 6, height);
+    ctx.shadowBlur = 0;
+    // Shine
+    ctx.strokeStyle = 'rgba(255,100,80,0.2)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x+10, 0); ctx.lineTo(x+10, height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+24, 0); ctx.lineTo(x+24, height); ctx.stroke();
+  } else {
+    const botY = GROUND_Y;
+    ctx.fillRect(x, botY-height, OBS_W, height);
+    ctx.fillStyle = '#cc1100';
+    ctx.fillRect(x-6, botY-height, OBS_W+12, 20);
+    ctx.strokeStyle = '#ff3300'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x-2, botY-height+14);
+    ctx.quadraticCurveTo(x+OBS_W/2, botY-height+4, x+OBS_W+2, botY-height+10);
+    ctx.stroke();
+    const spikes = 5, sw = (OBS_W+12)/spikes;
+    for (let i = 0; i < spikes; i++) {
+      const sh = 20+Math.sin(i*2.1+0.5)*9;
+      ctx.fillStyle = i%2===0 ? '#cc1100' : '#881100';
+      ctx.beginPath();
+      ctx.moveTo(x-6+i*sw, botY-height);
+      ctx.lineTo(x-6+i*sw+sw/2, botY-height-sh);
+      ctx.lineTo(x-6+(i+1)*sw, botY-height);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(200,20,0,0.25)';
+    ctx.fillRect(x+OBS_W/2-3, botY-height, 6, height);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,100,80,0.2)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x+10, botY-height); ctx.lineTo(x+10, botY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+24, botY-height); ctx.lineTo(x+24, botY); ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawNikeSwoosh(cx, cy, size, color, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = size*0.18;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = color; ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(cx - size*0.5, cy + size*0.1);
+  ctx.bezierCurveTo(
+    cx - size*0.1, cy + size*0.35,
+    cx + size*0.4, cy - size*0.05,
+    cx + size*0.5, cy - size*0.3
+  );
+  ctx.bezierCurveTo(
+    cx + size*0.55, cy - size*0.45,
+    cx + size*0.1, cy - size*0.1,
+    cx - size*0.2, cy + size*0.05
+  );
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawLoui(x, y, vy, phase) {
+  ctx.save();
+  ctx.translate(x, y);
+  const lean = phase==='dead' ? 50 : Math.max(-18, Math.min(28, vy*2.2));
+  ctx.rotate(lean*Math.PI/180);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(255,30,0,0.1)';
+  ctx.beginPath(); ctx.ellipse(0, LOUI_H/2+4, 17, 5, 0, 0, Math.PI*2); ctx.fill();
+
+  // === SKATES — black Nike hockey skates ===
+  ctx.fillStyle = '#0a0a0a';
+  ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 6;
+  ctx.beginPath(); ctx.roundRect(-13, LOUI_H/2-9, 16, 12, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(1, LOUI_H/2-9, 16, 12, 3); ctx.fill();
+  ctx.shadowBlur = 0;
+  // Red ankle trim
+  ctx.strokeStyle = '#ff2200'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-13, LOUI_H/2-9); ctx.lineTo(3, LOUI_H/2-9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(1, LOUI_H/2-9); ctx.lineTo(17, LOUI_H/2-9); ctx.stroke();
+  // Blades
+  ctx.strokeStyle = '#ddeeff'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  ctx.shadowColor = '#aaccff'; ctx.shadowBlur = 6;
+  ctx.beginPath(); ctx.moveTo(-14, LOUI_H/2+3); ctx.lineTo(8, LOUI_H/2+3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-10, LOUI_H/2+3); ctx.lineTo(15, LOUI_H/2+3); ctx.stroke();
+  ctx.shadowBlur = 0;
+  // Mini Nike swoosh on skate
+  drawNikeSwoosh(-5, LOUI_H/2-3, 10, '#ff2200', 0.8);
+  drawNikeSwoosh(8, LOUI_H/2-3, 10, '#ff2200', 0.8);
+
+  // === TRACKSUIT BOTTOMS — black with red stripe ===
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.roundRect(-11, LOUI_H/2-24, 11, 17, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(2, LOUI_H/2-24, 11, 17, 3); ctx.fill();
+  // Red side stripe on legs
+  ctx.fillStyle = '#dd1100';
+  ctx.beginPath(); ctx.roundRect(-13, LOUI_H/2-24, 3, 17, 1); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(12, LOUI_H/2-24, 3, 17, 1); ctx.fill();
+
+  // === TRACKSUIT JACKET — red body, black panels ===
+  // Main red jacket
+  const jacketGrad = ctx.createLinearGradient(-14, -LOUI_H/2+12, 14, LOUI_H/2-8);
+  jacketGrad.addColorStop(0, '#dd1100');
+  jacketGrad.addColorStop(0.5, '#ff2200');
+  jacketGrad.addColorStop(1, '#aa0d00');
+  ctx.fillStyle = jacketGrad;
+  ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.roundRect(-14, -LOUI_H/2+12, 28, 26, 4); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Black side panels on jacket
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.roundRect(-14, -LOUI_H/2+12, 5, 26, [4,0,0,4]); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(9, -LOUI_H/2+12, 5, 26, [0,4,4,0]); ctx.fill();
+
+  // Zip line down center
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, -LOUI_H/2+12); ctx.lineTo(0, LOUI_H/2-8); ctx.stroke();
+  // Zip pull
+  ctx.fillStyle = '#888';
+  ctx.beginPath(); ctx.roundRect(-2, -LOUI_H/2+18, 4, 5, 1); ctx.fill();
+
+  // Nike swoosh on chest (large, white)
+  drawNikeSwoosh(4, -LOUI_H/2+22, 13, '#ffffff', 0.9);
+
+  // Collar
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.roundRect(-6, -LOUI_H/2+10, 12, 6, [0,0,3,3]); ctx.fill();
+
+  // === ARMS — tracksuit sleeves ===
+  const armSwing = Math.sin(state.frame*0.2)*12;
+  // Back arm
+  ctx.strokeStyle = '#bb0e00'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-11, -LOUI_H/2+16);
+  ctx.quadraticCurveTo(-24, -LOUI_H/2+20+armSwing, -26, -LOUI_H/2+10+armSwing);
+  ctx.stroke();
+  // Black stripe on back sleeve
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-13, -LOUI_H/2+17);
+  ctx.quadraticCurveTo(-25, -LOUI_H/2+21+armSwing, -27, -LOUI_H/2+11+armSwing);
+  ctx.stroke();
+  // Front arm
+  ctx.strokeStyle = '#bb0e00'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(11, -LOUI_H/2+16);
+  ctx.quadraticCurveTo(23, -LOUI_H/2+12-armSwing, 24, -LOUI_H/2+3-armSwing);
+  ctx.stroke();
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(12, -LOUI_H/2+17);
+  ctx.quadraticCurveTo(24, -LOUI_H/2+13-armSwing, 25, -LOUI_H/2+4-armSwing);
+  ctx.stroke();
+  // Gloves — black
+  ctx.fillStyle = '#111';
+  ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 4;
+  ctx.beginPath(); ctx.arc(-26, -LOUI_H/2+10+armSwing, 5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(24, -LOUI_H/2+3-armSwing, 5, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // === NECK ===
+  ctx.fillStyle = '#c8904a';
+  ctx.beginPath(); ctx.roundRect(-4, -LOUI_H/2+9, 8, 6, 2); ctx.fill();
+
+  // === HEAD ===
+  ctx.fillStyle = '#c8904a';
+  ctx.shadowColor = '#a06030'; ctx.shadowBlur = 5;
+  ctx.beginPath(); ctx.arc(0, -LOUI_H/2+3, 13, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Short hair — dark brown, messy/sporty
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath(); ctx.arc(0, -LOUI_H/2-2, 13, Math.PI, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -LOUI_H/2+3, 13, Math.PI, Math.PI*1.15); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -LOUI_H/2+3, 13, Math.PI*1.85, Math.PI*2); ctx.fill();
+  // Messy hair tufts
+  ctx.fillStyle = '#3a2000';
+  ctx.beginPath(); ctx.ellipse(-4, -LOUI_H/2-11, 4, 3, -0.3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(3, -LOUI_H/2-12, 3.5, 2.5, 0.3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-9, -LOUI_H/2-7, 3, 2.5, -0.6, 0, Math.PI*2); ctx.fill();
+
+  // Nike red cap brim (snapback)
+  ctx.fillStyle = '#cc1100';
+  ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.ellipse(0, -LOUI_H/2-1, 13, 4, 0, Math.PI, Math.PI*2);
+  ctx.fill();
+  // Brim
+  ctx.beginPath();
+  ctx.ellipse(7, -LOUI_H/2, 9, 3, 0.2, 0, Math.PI);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // Cap detail stitching
+  ctx.strokeStyle = '#991100'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-12, -LOUI_H/2-1); ctx.lineTo(12, -LOUI_H/2-1); ctx.stroke();
+  // Nike swoosh on cap
+  drawNikeSwoosh(2, -LOUI_H/2-4, 9, '#ffffff', 0.85);
+
+  // Eyes — confident
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(-4.5, -LOUI_H/2+5, 2.8, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(4.5, -LOUI_H/2+5, 2.8, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#3a2000';
+  ctx.beginPath(); ctx.arc(-4.5, -LOUI_H/2+5, 1.8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4.5, -LOUI_H/2+5, 1.8, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-3.5, -LOUI_H/2+4, 0.8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(5.5, -LOUI_H/2+4, 0.8, 0, Math.PI*2); ctx.fill();
+  // Cool eyebrows
+  ctx.strokeStyle = '#2a1500'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-7, -LOUI_H/2+2); ctx.lineTo(-2, -LOUI_H/2+3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(7, -LOUI_H/2+2); ctx.lineTo(2, -LOUI_H/2+3); ctx.stroke();
+
+  // Smirk
+  ctx.strokeStyle = '#a06030'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-3, -LOUI_H/2+10); ctx.quadraticCurveTo(1, -LOUI_H/2+13, 5, -LOUI_H/2+11); ctx.stroke();
+
+  ctx.restore();
+}
+
+function draw() {
+  const f = state.frame;
+
+  // Background — dark red-black arena
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#080000');
+  bgGrad.addColorStop(0.4, '#0e0000');
+  bgGrad.addColorStop(0.65, '#120000');
+  bgGrad.addColorStop(1, '#060000');
+  ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 30; i++) {
+    const sx = ((i*141+f*0.01)%W);
+    const sy = (i*67)%(H*0.38);
+    const alpha = 0.25+Math.sin(f*0.04+i)*0.2;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#ffdddd';
+    ctx.beginPath(); ctx.arc(sx, sy, 0.8, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Red glow from top lights
+  for (let i = 0; i < 5; i++) {
+    const lx = 40+i*88;
+    const flicker = 0.85+Math.sin(f*0.22+i*1.4)*0.04;
+    const lg = ctx.createRadialGradient(lx, 0, 0, lx, 0, 140);
+    lg.addColorStop(0, `rgba(255,40,0,${0.18*flicker})`);
+    lg.addColorStop(0.5, `rgba(180,10,0,${0.06*flicker})`);
+    lg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lg; ctx.fillRect(lx-140, 0, 280, 240);
+    // Lamp
+    ctx.fillStyle = `rgba(255,160,120,${0.6*flicker})`;
+    ctx.beginPath(); ctx.arc(lx, 4, 4, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Stands
+  ctx.fillStyle = '#0a0000';
+  ctx.fillRect(0, H*0.34, W, H*0.18);
+  for (const c of CROWD) {
+    const wave = Math.sin(f*0.04+c.x*0.1)*state.crowdWave;
+    const reddy = Math.random() > 0.5;
+    ctx.fillStyle = reddy
+      ? `rgba(${140+Math.floor(c.x/3)},0,0,0.65)`
+      : `rgba(20,20,20,0.7)`;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y+wave-c.h, c.w/2, Math.PI, 0);
+    ctx.rect(c.x-c.w/2, c.y+wave-c.h, c.w, c.h);
+    ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(200,20,0,0.22)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, H*0.52); ctx.lineTo(W, H*0.52); ctx.stroke();
+
+  // Rink boards — black with red trim
+  const boardGrad = ctx.createLinearGradient(0, H*0.52, 0, GROUND_Y);
+  boardGrad.addColorStop(0, '#140000'); boardGrad.addColorStop(1, '#0a0000');
+  ctx.fillStyle = boardGrad; ctx.fillRect(0, H*0.52, W, GROUND_Y-H*0.52);
+  // Red board top stripe
+  ctx.fillStyle = 'rgba(200,10,0,0.5)';
+  ctx.fillRect(0, H*0.52, W, 4);
+
+  // Scrolling banners — Nike red/black
+  const banners = ['NIKE', 'LOUI #1', 'JUST DO IT', 'AIR ICE', 'SWOOSH'];
+  const bColors = ['#cc0000','#111','#aa0000','#0a0a0a','#bb0000'];
+  const tColors = ['#ffffff','#ff2200','#ffffff','#ff2200','#ffffff'];
+  ctx.font = 'bold 11px Nunito'; ctx.textAlign = 'center';
+  for (let i = 0; i < banners.length; i++) {
+    const bx = i*90-((f*OBS_SPD*0.3)%(W+90));
+    const by = H*0.535, bw = 80, bh = 20;
+    ctx.fillStyle = bColors[i%bColors.length];
+    ctx.fillRect(bx-bw/2, by, bw, bh);
+    ctx.fillStyle = tColors[i%tColors.length];
+    ctx.fillText(banners[i], bx, by+14);
+    ctx.fillStyle = bColors[i%bColors.length];
+    ctx.fillRect(bx-bw/2+W+90, by, bw, bh);
+    ctx.fillStyle = tColors[i%tColors.length];
+    ctx.fillText(banners[i], bx+W+90, by+14);
+  }
+
+  // Ice surface — dark with red tint
+  const iceGrad = ctx.createLinearGradient(0, GROUND_Y-30, 0, H);
+  iceGrad.addColorStop(0, '#280005');
+  iceGrad.addColorStop(0.3, '#1e0003');
+  iceGrad.addColorStop(1, '#0e0002');
+  ctx.fillStyle = iceGrad; ctx.fillRect(0, GROUND_Y, W, H-GROUND_Y);
+  ctx.fillStyle = 'rgba(255,30,0,0.1)'; ctx.fillRect(0, GROUND_Y, W, 4);
+
+  // Center ice Nike swoosh (large, scrolling)
+  const logoX = W/2-((f*OBS_SPD*0.5)%(W*2))+W*0.5;
+  drawNikeSwoosh(logoX, GROUND_Y+22, 60, 'rgba(180,10,0,0.18)', 1);
+
+  // Ice grain lines
+  ctx.strokeStyle = 'rgba(200,20,0,0.05)'; ctx.lineWidth = 1;
+  const scroll = (f*OBS_SPD*0.5)%70;
+  for (let x = -scroll; x < W+10; x += 70) {
+    ctx.beginPath(); ctx.moveTo(x, GROUND_Y+5); ctx.lineTo(x+35, GROUND_Y+28); ctx.stroke();
+  }
+
+  // Snowflakes
+  for (const s of SNOWFLAKES) {
+    ctx.globalAlpha = s.alpha*0.5;
+    ctx.fillStyle = '#ffcccc';
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Ice trail — red sparky
+  for (const t of state.iceTrail) {
+    ctx.globalAlpha = t.life*0.55;
+    ctx.strokeStyle = '#ff2200';
+    ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.x-t.w, t.y+3); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  // Swoosh effects on jump
+  for (const sw of state.swooshes) {
+    drawNikeSwoosh(LOUI_X-20, state.cy-10, 28*sw.scale, '#ff2200', sw.life*0.5);
+  }
+
+  // Obstacles
+  for (const o of state.obstacles) {
+    const botH = GROUND_Y-o.topH-OBS_GAP;
+    drawWall(o.x, o.topH, true);
+    drawWall(o.x, botH, false);
+  }
+
+  // Sparks
+  for (const sp of state.sparks) {
+    ctx.globalAlpha = sp.life;
+    ctx.fillStyle = sp.color;
+    ctx.shadowColor = sp.color; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  // Loui
+  drawLoui(LOUI_X, state.cy, state.cvy, state.phase);
+
+  // Score — Bebas Neue bold
+  ctx.font = "bold 46px 'Bebas Neue', cursive";
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillText(state.score, W/2+2, 56);
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 22;
+  ctx.fillText(state.score, W/2, 54);
+  ctx.shadowBlur = 0;
+
+  // === IDLE SCREEN ===
+  if (state.phase === 'idle') {
+    ctx.fillStyle = 'rgba(6,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+
+    // Red glow behind title
+    const glow = ctx.createRadialGradient(W/2, 225, 0, W/2, 225, 180);
+    glow.addColorStop(0, 'rgba(255,20,0,0.16)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow; ctx.fillRect(W/2-180, 100, 360, 250);
+
+    // Big Nike swoosh behind title
+    drawNikeSwoosh(W/2, 200, 120, 'rgba(200,10,0,0.12)', 1);
+
+    ctx.font = "bold 82px 'Bebas Neue', cursive";
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 40;
+    ctx.fillText('LOUI', W/2, 215);
+
+    ctx.font = "bold 44px 'Bebas Neue', cursive";
+    ctx.fillStyle = '#ff2200';
+    ctx.shadowColor = '#aa0000'; ctx.shadowBlur = 22;
+    ctx.fillText('SKATES', W/2, 262);
+    ctx.shadowBlur = 0;
+
+    // Nike tagline
+    ctx.font = "900 12px 'Nunito', sans-serif";
+    ctx.fillStyle = 'rgba(255,80,40,0.55)';
+    ctx.fillText('JUST DO IT.', W/2, 288);
+
+    const pulse = Math.sin(f*0.08)*0.25+0.75;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#fff';
+    ctx.font = "700 16px 'Nunito', sans-serif";
+    ctx.fillText('⚡ TAP OR PRESS SPACE TO SKATE ⚡', W/2, 346);
+    ctx.globalAlpha = 1;
+
+    if (state.best > 0) {
+      ctx.fillStyle = '#ffd700';
+      ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 10;
+      ctx.font = "700 17px 'Nunito', sans-serif";
+      ctx.fillText('🏆 BEST: '+state.best, W/2, 384);
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.fillStyle = 'rgba(220,40,0,0.3)';
+    ctx.font = "700 12px 'Nunito', sans-serif";
+    ctx.fillText('Loui #1 — The Ice Striker', W/2, 416);
+
+    // Small Nike swooshes decorative
+    drawNikeSwoosh(W/2-80, 450, 22, 'rgba(200,20,0,0.25)', 1);
+    drawNikeSwoosh(W/2+80, 450, 22, 'rgba(200,20,0,0.25)', 1);
+  }
+
+  // === DEAD SCREEN ===
+  if (state.phase === 'dead' && state.deathTimer > 35) {
+    ctx.fillStyle = 'rgba(6,0,0,0.78)';
+    ctx.beginPath(); ctx.roundRect(45, 183, 330, 244, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(220,20,0,0.5)'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 16;
+    ctx.stroke(); ctx.shadowBlur = 0;
+
+    // Swoosh in panel
+    drawNikeSwoosh(W/2, 280, 55, 'rgba(180,10,0,0.15)', 1);
+
+    ctx.textAlign = 'center';
+    ctx.font = "bold 36px 'Bebas Neue', cursive";
+    ctx.fillStyle = '#ff2200';
+    ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 18;
+    ctx.fillText('LOUI WIPED OUT!', W/2, 232);
+    ctx.shadowBlur = 0;
+
+    ctx.font = "bold 24px 'Nunito', sans-serif";
+    ctx.fillStyle = '#ffe8e8';
+    ctx.fillText('Score: '+state.score, W/2, 275);
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 8;
+    ctx.fillText('🏆 Best: '+state.best, W/2, 310);
+    ctx.shadowBlur = 0;
+
+    if (state.deathTimer > 70) {
+      const p2 = Math.sin(f*0.1)*0.25+0.75;
+      ctx.globalAlpha = p2;
+      ctx.fillStyle = '#ff2200';
+      ctx.font = "700 15px 'Nunito', sans-serif";
+      ctx.fillText('⚡ TAP / SPACE TO TRY AGAIN ⚡', W/2, 385);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
